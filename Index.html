@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mini AI Chat — Mobile</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  :root{
+    --bg:#0f1720; --panel:#0b1220; --muted:#9aa4b2; --accent:#4fb3ff;
+    --ai:#101827; --user:#c7eaff;
+  }
+  /* Light theme overrides */
+  body.light { --bg:#f6f8fb; --panel:#ffffff; --muted:#4b5563; --accent:#0077cc; --ai:#eef3fb; --user:#2b6cb0; color:#0b1220 }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+    background:var(--bg); color:#e6eef6; -webkit-font-smoothing:antialiased;
+    height:100vh; display:flex; flex-direction:column;
+  }
+
+  /* Header */
+  header.appbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px; gap:8px; background:linear-gradient(90deg, rgba(255,255,255,0.02), transparent);
+    backdrop-filter: blur(6px);
+  }
+  .left { display:flex; gap:8px; align-items:center; }
+  .brand { font-weight:700; letter-spacing:0.2px; font-size:16px; }
+  select, button.icon {
+    background:transparent; border:0; color:inherit; font-size:14px;
+  }
+
+  /* Chat area */
+  main.chat {
+    flex:1; overflow:hidden; display:flex; flex-direction:column;
+  }
+  .messages {
+    padding:12px; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  .bubble {
+    display:inline-block; padding:10px 12px; border-radius:14px; margin:8px 0; max-width:78%;
+    word-break:break-word; box-shadow: 0 6px 12px rgba(2,6,23,0.4);
+    opacity:0; transform:translateY(8px); animation:fadeIn .18s ease forwards;
+  }
+  @keyframes fadeIn { to{opacity:1; transform:none} }
+  .bubble.user { background:var(--user); color:#071225; margin-left:auto; border-bottom-right-radius:6px; }
+  .bubble.ai { background:var(--ai); color:var(--muted); border-bottom-left-radius:6px; }
+
+  .meta { font-size:11px; color:var(--muted); margin-top:6px; display:flex; gap:8px; align-items:center; }
+  .time { font-size:11px; color:var(--muted) }
+
+  /* typing dots */
+  .typing {
+    height:36px; display:flex; gap:6px; align-items:center;
+  }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); opacity:0.6; animation:blink 1s infinite; }
+  .dot.d1{ animation-delay:0s } .dot.d2{ animation-delay:.16s } .dot.d3{ animation-delay:.32s }
+  @keyframes blink{ 0%{transform:translateY(0); opacity:0.4} 50%{transform:translateY(-6px); opacity:1} 100%{transform:translateY(0); opacity:0.6} }
+
+  /* input area */
+  footer.composer {
+    padding:10px; display:flex; gap:8px; align-items:end; background:linear-gradient(180deg, transparent, rgba(0,0,0,0.04));
+  }
+  .inputWrap{ flex:1; background:var(--panel); border-radius:12px; padding:8px; display:flex; gap:8px; align-items:center; }
+  textarea#msg{ width:100%; min-height:40px; max-height:90px; background:transparent; border:0; resize:none; color:inherit; font-size:15px; outline:none; }
+  button.send { background:var(--accent); border:0; padding:10px 12px; border-radius:10px; color:#021024; font-weight:700; }
+
+  /* small screens */
+  @media (max-width:420px){
+    header.appbar{ padding:10px }
+    .brand{ font-size:15px }
+    .bubble { max-width:84% }
+  }
+
+  /* modal news */
+  .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:40; }
+  .modal.show { display:flex }
+  .modalBack { position:absolute; inset:0; background:rgba(2,6,23,0.6); backdrop-filter: blur(4px); }
+  .modalCard { position:relative; width:94%; max-width:720px; max-height:86vh; overflow:auto; border-radius:14px; padding:12px; background:var(--panel); z-index:41; }
+  .article { display:flex; gap:10px; margin:8px 0; padding:8px; border-radius:10px; align-items:center; }
+  .article img { width:64px; height:64px; object-fit:cover; border-radius:8px }
+  .article h4{ margin:0; font-size:15px }
+  .article p{ margin:4px 0 0 0; font-size:13px; color:var(--muted) }
+
+  /* small controls */
+  .controls { display:flex; gap:8px; align-items:center }
+  .chip { padding:6px 8px; border-radius:999px; background:transparent; border:1px solid rgba(255,255,255,0.04); color:var(--muted); font-size:13px }
+  .regenerate { background:transparent; border:0; color:var(--muted); font-size:13px; padding:6px }
+  .scrollBottom { position:fixed; right:12px; bottom:90px; background:var(--accent); padding:8px 10px; border-radius:999px; display:none; z-index:50; }
+  .scrollBottom.show { display:block }
+
+  /* small helper */
+  .small{ font-size:12px; color:var(--muted) }
+</style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="left">
+      <div class="brand"><i class="fa-solid fa-robot"></i> Mini AI Chat</div>
+      <div class="controls" style="margin-left:8px">
+        <select id="category" aria-label="Category">
+          <option value="General">General</option>
+          <option value="Sports">Sports</option>
+          <option value="Tech">Tech</option>
+          <option value="Cooking">Cooking</option>
+          <option value="News">News</option>
+        </select>
+        <div class="chip small" id="countryChip">US</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center">
+      <button id="newsBtn" class="icon" title="Today's news"><i class="fa-solid fa-newspaper"></i></button>
+      <button id="themeBtn" class="icon" title="Toggle theme"><i id="themeIcon" class="fa-solid fa-moon"></i></button>
+    </div>
+  </header>
+
+  <main class="chat">
+    <div id="messages" class="messages" aria-live="polite"></div>
+  </main>
+
+  <footer class="composer">
+    <div class="inputWrap">
+      <textarea id="msg" placeholder="Say hi — short prompts work best" rows="1"></textarea>
+      <button class="regenerate" id="regenerateBtn" title="Regenerate last reply"><i class="fa-solid fa-rotate"></i></button>
+    </div>
+    <button class="send" id="sendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+  </footer>
+
+  <button class="scrollBottom" id="scrollBottom" title="Scroll to bottom"><i class="fa-solid fa-arrow-down"></i></button>
+
+  <!-- News Modal -->
+  <div class="modal" id="newsModal" role="dialog" aria-modal="true">
+    <div class="modalBack" id="modalBack"></div>
+    <div class="modalCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">Top Headlines</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="newsCountry" title="Country">
+            <option value="us">US</option><option value="gb">UK</option><option value="ma">MA</option><option value="fr">FR</option>
+          </select>
+          <button id="closeNews" class="icon"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </div>
+      <div id="newsList" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+<script>
+/* ======= Simple helper utils ======= */
+const $ = sel => document.querySelector(sel);
+const $all = sel => Array.from(document.querySelectorAll(sel));
+const formatTime = (t => new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+
+/* ======= App state & localStorage ======= */
+const LS_KEY = "mini_ai_chat_history_v1";
+let state = {
+  messages: [],    // {id, who:'user'|'ai', text, ts}
+  pending: false,
+  lastUserForRegen: null,
+  country: localStorage.getItem('mini_news_country') || 'us',
+  theme: localStorage.getItem('mini_theme') || 'dark'
+};
+
+const maxHistory = 60; // limit
+
+/* ======= DOM refs ======= */
+const messagesEl = $("#messages");
+const msgInput = $("#msg");
+const sendBtn = $("#sendBtn");
+const newsBtn = $("#newsBtn");
+const newsModal = $("#newsModal");
+const modalBack = $("#modalBack");
+const closeNews = $("#closeNews");
+const newsList = $("#newsList");
+const newsCountry = $("#newsCountry");
+const countryChip = $("#countryChip");
+const themeBtn = $("#themeBtn");
+const themeIcon = $("#themeIcon");
+const regenerateBtn = $("#regenerateBtn");
+const scrollBottomBtn = $("#scrollBottom");
+const categoryEl = $("#category");
+
+/* ======= Init theme & country ======= */
+function applyTheme(t){
+  document.body.classList.toggle('light', t==='light');
+  themeIcon.className = t==='light' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+  localStorage.setItem('mini_theme', t);
+  state.theme = t;
+}
+applyTheme(state.theme);
+
+newsCountry.value = state.country;
+countryChip.textContent = state.country.toUpperCase();
+
+/* ====== storage functions ====== */
+function saveState(){
+  const copy = {messages: state.messages.slice(-maxHistory)};
+  localStorage.setItem(LS_KEY, JSON.stringify(copy));
+}
+function loadState(){
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed?.messages) state.messages = parsed.messages;
+  } catch(e){ console.warn(e) }
+}
+
+/* ====== UI render ====== */
+function renderMessages(){
+  messagesEl.innerHTML = "";
+  state.messages.forEach(m => {
+    const wrap = document.createElement('div');
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (m.who==='user' ? 'user' : 'ai');
+    b.innerHTML = `<div>${escapeHtml(m.text)}</div><div class="meta"><span class="time">${formatTime(m.ts)}</span>${m.who==='ai' && m.id ? `<button class="regenerate small" data-id="${m.id}" style="margin-left:8px">Regenerate</button>`: ''}</div>`;
+    wrap.appendChild(b);
+    messagesEl.appendChild(wrap);
+  });
+  scrollToBottom(false);
+  attachRegenerateLinks();
+}
+
+function attachRegenerateLinks(){
+  $all('.regenerate[data-id]').forEach(btn => {
+    btn.onclick = e => {
+      const id = e.currentTarget.dataset.id;
+      // find message by id -> we will regenerate by resending the user message that generated it (we stored lastUserForRegen)
+      if(state.lastUserForRegen) {
+        sendMessage(state.lastUserForRegen, true); // force regenerate
+      }
+    }
+  });
+}
+
+/* ====== helpers ====== */
+function escapeHtml(s){
+  return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+}
+function pushMessage(who, text){
+  const item = { id: cryptoRandomId(), who, text, ts: Date.now() };
+  state.messages.push(item);
+  // limit
+  if(state.messages.length > maxHistory) state.messages = state.messages.slice(-maxHistory);
+  saveState();
+  renderMessages();
+  return item;
+}
+function cryptoRandomId(){
+  return Math.random().toString(36).slice(2,9);
+}
+function scrollToBottom(smooth=true){
+  messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+}
+
+/* typing placeholder */
+function showTyping(){
+  const id = cryptoRandomId();
+  const el = document.createElement('div');
+  el.className = 'bubble ai';
+  el.id = 'typing-'+id;
+  el.innerHTML = `<div class="typing"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div></div><div class="meta"><span class="time">${formatTime(Date.now())}</span></div>`;
+  messagesEl.appendChild(el);
+  scrollToBottom(true);
+  return el.id;
+}
+function removeTyping(id){
+  const el = document.getElementById(id);
+  if(el) el.remove();
+}
+
+/* ===== send / receive logic ===== */
+async function sendMessage(text, isRegenerate=false){
+  if(!text || state.pending) return;
+  state.pending = true;
+  // push user view
+  const userItem = pushMessage('user', text);
+  state.lastUserForRegen = text;
+
+  // show typing
+  const typingId = showTyping();
+
+  try {
+    // prepare context (last up to 8 messages to keep concise)
+    const context = state.messages.slice(-10).map(m => ({ role: m.who === 'user' ? 'USER' : 'AI', content: m.text }));
+
+    const payload = { message: text, category: categoryEl.value || 'General', context };
+
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+
+    if(!r.ok) throw new Error('Server error');
+
+    const data = await r.json();
+    const reply = data.reply || 'I could not generate a response.';
+    removeTyping(typingId);
+    const aiItem = pushMessage('ai', reply);
+    // store id mapping so regenerate UI can access
+    aiItem.generatedFor = userItem.id;
+    state.pending = false;
+  } catch(err){
+    removeTyping(typingId);
+    pushMessage('ai', '⚠️ Error: failed to fetch response. Try again.');
+    state.pending = false;
+    console.error(err);
+  }
+}
+
+/* ===== UI handlers ===== */
+sendBtn.onclick = async () => {
+  const text = msgInput.value.trim();
+  if(!text) return;
+  msgInput.value = '';
+  await sendMessage(text);
+};
+
+msgInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendBtn.click();
+  }
+});
+
+/* news modal handlers */
+newsBtn.onclick = async () => {
+  await openNewsModal();
+};
+closeNews.onclick = () => newsModal.classList.remove('show');
+modalBack.onclick = () => newsModal.classList.remove('show');
+
+newsCountry.onchange = () => {
+  state.country = newsCountry.value;
+  localStorage.setItem('mini_news_country', state.country);
+  countryChip.textContent = state.country.toUpperCase();
+};
+
+/* theme toggle */
+themeBtn.onclick = () => {
+  const next = state.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+};
+
+/* scroll bottom button */
+messagesEl.addEventListener('scroll', () => {
+  const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 160;
+  scrollBottomBtn.classList.toggle('show', !nearBottom);
+});
+scrollBottomBtn.onclick = () => scrollToBottom(true);
+
+/* regenerate button (resend last user prompt) */
+regenerateBtn.onclick = async () => {
+  if(state.lastUserForRegen) {
+    await sendMessage(state.lastUserForRegen, true);
+  } else {
+    // no last message
+    pushMessage('ai', 'No message available to regenerate.');
+  }
+};
+
+/* open news & show articles */
+async function openNewsModal(){
+  newsModal.classList.add('show');
+  newsList.innerHTML = '<div class="small">Loading...</div>';
+  try {
+    const res = await fetch(`/api/news?country=${state.country}&pageSize=6`);
+    const data = await res.json();
+    if(!data.articles || data.articles.length === 0){
+      newsList.innerHTML = '<div class="small">No articles found.</div>';
+      return;
+    }
+    newsList.innerHTML = '';
+    data.articles.forEach(a => {
+      const art = document.createElement('div');
+      art.className = 'article';
+      art.innerHTML = `
+        <img src="${a.urlToImage || 'https://via.placeholder.com/120x80?text=no'}" alt="">
+        <div style="flex:1">
+          <h4><a href="${a.url}" target="_blank" rel="noopener" style="color:inherit; text-decoration:none">${escapeHtml(a.title || 'Untitled')}</a></h4>
+          <p class="small">${escapeHtml(a.source?.name || '')} — ${new Date(a.publishedAt || Date.now()).toLocaleString()}</p>
+        </div>
+      `;
+      newsList.appendChild(art);
+    });
+  } catch(e){
+    newsList.innerHTML = '<div class="small">Failed to load news.</div>';
+  }
+}
+
+/* init load */
+loadState();
+renderMessages();
+if(state.messages.length===0){
+  pushMessage('ai','Welcome! Ask me anything — choose a category and press send. Tip: press Regenerate to re-run last prompt.');
+}
+</script>
+</body>
+</html>
